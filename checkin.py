@@ -207,6 +207,10 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 	account_name = account.get_display_name(account_index)
 	print(f'\n[PROCESSING] Starting to process {account_name}')
 
+	# DEBUG: 临时打印敏感信息用于恢复配置，之后需要回退此修改
+	print(f'[DEBUG] {account_name} - cookies: {account.cookies}')
+	print(f'[DEBUG] {account_name} - api_user: {account.api_user}')
+
 	provider_config = app_config.get_provider(account.provider)
 	if not provider_config:
 		print(f'[FAILED] {account_name}: Provider "{account.provider}" not found in configuration')
