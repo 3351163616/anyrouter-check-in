@@ -11,6 +11,7 @@ class NotificationKit:
 		self.email_user: str = os.getenv('EMAIL_USER', '')
 		self.email_pass: str = os.getenv('EMAIL_PASS', '')
 		self.email_to: str = os.getenv('EMAIL_TO', '')
+		self.email_sender: str = os.getenv('EMAIL_SENDER', '')
 		self.smtp_server: str = os.getenv('CUSTOM_SMTP_SERVER', '')
 		self.pushplus_token = os.getenv('PUSHPLUS_TOKEN')
 		self.server_push_key = os.getenv('SERVERPUSHKEY')
@@ -28,10 +29,13 @@ class NotificationKit:
 		if not self.email_user or not self.email_pass or not self.email_to:
 			raise ValueError('Email configuration not set')
 
+		# 如果未设置 EMAIL_SENDER，使用 EMAIL_USER 作为默认值
+		sender = self.email_sender if self.email_sender else self.email_user
+
 		# MIMEText 需要 'plain' 或 'html'，而不是 'text'
 		mime_subtype = 'plain' if msg_type == 'text' else 'html'
 		msg = MIMEText(content, mime_subtype, 'utf-8')
-		msg['From'] = f'AnyRouter Assistant <{self.email_user}>'
+		msg['From'] = f'AnyRouter Assistant <{sender}>'
 		msg['To'] = self.email_to
 		msg['Subject'] = title
 

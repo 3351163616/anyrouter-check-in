@@ -259,9 +259,10 @@
 
 脚本支持多种通知方式，可以通过配置以下环境变量开启，如果 `webhook` 有要求安全设置，例如钉钉，可以在新建机器人时选择自定义关键词，填写 `AnyRouter`。
 
-### 邮箱通知
-- `EMAIL_USER`: 发件人邮箱地址
+### 邮箱通知(STMP)
+- `EMAIL_USER`: 发件人邮箱地址/STMP登录地址
 - `EMAIL_PASS`: 发件人邮箱密码/授权码
+- `EMAIL_SENDER`: 邮件显示的发件人地址(可选，默认: EMAIL_USER)
 - `CUSTOM_SMTP_SERVER`: 自定义发件人SMTP服务器(可选)
 - `EMAIL_TO`: 收件人邮箱地址
 ### 钉钉机器人
