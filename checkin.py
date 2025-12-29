@@ -284,8 +284,7 @@ async def main():
 	total_count = len(accounts)
 	notification_content = []
 	current_balances = {}
-	need_notify = False  # 是否需要发送通知
-	balance_changed = False  # 余额是否有变化
+	need_notify = False  # 是否需要发送通知（仅在签到失败时触发）
 
 	for i, account in enumerate(accounts):
 		account_key = f'account_{i + 1}'
@@ -323,37 +322,15 @@ async def main():
 			need_notify = True  # 异常也需要通知
 			notification_content.append(f'[FAIL] {account_name} exception: {str(e)[:50]}...')
 
-	# 检查余额变化
+	# 保存余额hash（用于日志记录，不触发通知）
 	current_balance_hash = generate_balance_hash(current_balances) if current_balances else None
 	if current_balance_hash:
 		if last_balance_hash is None:
-			# 首次运行
-			balance_changed = True
-			need_notify = True
-			print('[NOTIFY] First run detected, will send notification with current balances')
+			print('[INFO] First run detected, balance hash saved')
 		elif current_balance_hash != last_balance_hash:
-			# 余额有变化
-			balance_changed = True
-			need_notify = True
-			print('[NOTIFY] Balance changes detected, will send notification')
+			print('[INFO] Balance changes detected')
 		else:
 			print('[INFO] No balance changes detected')
-
-	# 为有余额变化的情况添加所有成功账号到通知内容
-	if balance_changed:
-		for i, account in enumerate(accounts):
-			account_key = f'account_{i + 1}'
-			if account_key in current_balances:
-				account_name = account.get_display_name(i)
-				# 只添加成功获取余额的账号，且避免重复添加
-				account_result = f'[BALANCE] {account_name}'
-				account_result += f'\n:money: Current balance: ${current_balances[account_key]["quota"]}, Used: ${current_balances[account_key]["used"]}'
-				# 检查是否已经在通知内容中（避免重复）
-				if not any(account_name in item for item in notification_content):
-					notification_content.append(account_result)
-
-	# 保存当前余额hash
-	if current_balance_hash:
 		save_balance_hash(current_balance_hash)
 
 	if need_notify and notification_content:
@@ -377,9 +354,9 @@ async def main():
 
 		print(notify_content)
 		notify.push_message('AnyRouter Check-in Alert', notify_content, msg_type='text')
-		print('[NOTIFY] Notification sent due to failures or balance changes')
+		print('[NOTIFY] Notification sent due to failures')
 	else:
-		print('[INFO] All accounts successful and no balance changes detected, notification skipped')
+		print('[INFO] All accounts successful, notification skipped')
 
 	# 设置退出码
 	sys.exit(0 if success_count > 0 else 1)
