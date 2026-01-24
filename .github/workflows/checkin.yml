@@ -96,3 +96,9 @@ jobs:
       run: |
         echo "签到任务执行完成"
         echo "时间: $(Get-Date)"
+        echo ""
+        if (Test-Path "balance_summary.txt") {
+          Get-Content "balance_summary.txt"
+        } else {
+          echo "余额汇总文件不存在"
+        }

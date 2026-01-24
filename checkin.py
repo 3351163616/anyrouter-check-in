@@ -42,6 +42,37 @@ def save_balance_hash(balance_hash):
 		print(f'Warning: Failed to save balance hash: {e}')
 
 
+BALANCE_SUMMARY_FILE = 'balance_summary.txt'
+
+
+def write_balance_summary(accounts, current_balances):
+	"""写入余额汇总到文件"""
+	try:
+		lines = ['========== 账号余额汇总 ==========']
+		total_quota = 0
+		total_used = 0
+
+		for i, account in enumerate(accounts):
+			account_key = f'account_{i + 1}'
+			account_name = account.get_display_name(i)
+			if account_key in current_balances:
+				quota = current_balances[account_key]['quota']
+				used = current_balances[account_key]['used']
+				total_quota += quota
+				total_used += used
+				lines.append(f'{account_name}: 当前余额 ${quota}, 已用 ${used}')
+			else:
+				lines.append(f'{account_name}: 余额获取失败')
+
+		lines.append('----------------------------------')
+		lines.append(f'总计: 当前余额 ${round(total_quota, 2)}, 总已用 ${round(total_used, 2)}')
+
+		with open(BALANCE_SUMMARY_FILE, 'w', encoding='utf-8') as f:
+			f.write('\n'.join(lines))
+	except Exception as e:
+		print(f'Warning: Failed to write balance summary: {e}')
+
+
 def generate_balance_hash(balances):
 	"""生成余额数据的hash"""
 	# 将包含 quota 和 used 的结构转换为简单的 quota 值用于 hash 计算
@@ -357,6 +388,9 @@ async def main():
 		print('[NOTIFY] Notification sent due to failures')
 	else:
 		print('[INFO] All accounts successful, notification skipped')
+
+	# 写入余额汇总到文件（供 GitHub Actions 执行结果步骤读取）
+	write_balance_summary(accounts, current_balances)
 
 	# 设置退出码
 	sys.exit(0 if success_count > 0 else 1)
