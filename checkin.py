@@ -96,9 +96,9 @@ def parse_cookies(cookies_data):
 	return {}
 
 
-async def get_waf_cookies_with_playwright(account_name: str, login_url: str, required_cookies: list[str]):
+async def get_waf_cookies_with_playwright(provider_name: str, login_url: str, required_cookies: list[str]):
 	"""使用 Playwright 获取 WAF cookies（隐私模式）"""
-	print(f'[PROCESSING] {account_name}: Starting browser to get WAF cookies...')
+	print(f'[WAF] {provider_name}: Starting browser to get WAF cookies...')
 
 	async with async_playwright() as p:
 		import tempfile
@@ -121,7 +121,7 @@ async def get_waf_cookies_with_playwright(account_name: str, login_url: str, req
 			page = await context.new_page()
 
 			try:
-				print(f'[PROCESSING] {account_name}: Access login page to get initial cookies...')
+				print(f'[WAF] {provider_name}: Access login page to get initial cookies...')
 
 				await page.goto(login_url, wait_until='networkidle')
 
@@ -139,23 +139,23 @@ async def get_waf_cookies_with_playwright(account_name: str, login_url: str, req
 					if cookie_name in required_cookies and cookie_value is not None:
 						waf_cookies[cookie_name] = cookie_value
 
-				print(f'[INFO] {account_name}: Got {len(waf_cookies)} WAF cookies')
+				print(f'[WAF] {provider_name}: Got {len(waf_cookies)} WAF cookies')
 
 				missing_cookies = [c for c in required_cookies if c not in waf_cookies]
 
 				if missing_cookies:
-					print(f'[FAILED] {account_name}: Missing WAF cookies: {missing_cookies}')
+					print(f'[WAF] {provider_name}: Missing WAF cookies: {missing_cookies}')
 					await context.close()
 					return None
 
-				print(f'[SUCCESS] {account_name}: Successfully got all WAF cookies')
+				print(f'[WAF] {provider_name}: Successfully got all WAF cookies')
 
 				await context.close()
 
 				return waf_cookies
 
 			except Exception as e:
-				print(f'[FAILED] {account_name}: Error occurred while getting WAF cookies: {e}')
+				print(f'[WAF] {provider_name}: Error occurred while getting WAF cookies: {e}')
 				await context.close()
 				return None
 
@@ -180,22 +180,6 @@ def get_user_info(client, headers, user_info_url: str):
 		return {'success': False, 'error': f'Failed to get user info: HTTP {response.status_code}'}
 	except Exception as e:
 		return {'success': False, 'error': f'Failed to get user info: {str(e)[:50]}...'}
-
-
-async def prepare_cookies(account_name: str, provider_config, user_cookies: dict) -> dict | None:
-	"""准备请求所需的 cookies（可能包含 WAF cookies）"""
-	waf_cookies = {}
-
-	if provider_config.needs_waf_cookies():
-		login_url = f'{provider_config.domain}{provider_config.login_path}'
-		waf_cookies = await get_waf_cookies_with_playwright(account_name, login_url, provider_config.waf_cookie_names)
-		if not waf_cookies:
-			print(f'[FAILED] {account_name}: Unable to get WAF cookies')
-			return None
-	else:
-		print(f'[INFO] {account_name}: Bypass WAF not required, using user cookies directly')
-
-	return {**waf_cookies, **user_cookies}
 
 
 def execute_check_in(client, account_name: str, provider_config, headers: dict):
@@ -233,7 +217,7 @@ def execute_check_in(client, account_name: str, provider_config, headers: dict):
 		return False
 
 
-async def check_in_account(account: AccountConfig, account_index: int, app_config: AppConfig):
+async def check_in_account(account: AccountConfig, account_index: int, app_config: AppConfig, waf_cookies_cache: dict):
 	"""为单个账号执行签到操作"""
 	account_name = account.get_display_name(account_index)
 	print(f'\n[PROCESSING] Starting to process {account_name}')
@@ -250,9 +234,15 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 		print(f'[FAILED] {account_name}: Invalid configuration format')
 		return False, None
 
-	all_cookies = await prepare_cookies(account_name, provider_config, user_cookies)
-	if not all_cookies:
-		return False, None
+	# 使用预先获取的 WAF cookies
+	if provider_config.needs_waf_cookies():
+		waf_cookies = waf_cookies_cache.get(account.provider)
+		if not waf_cookies:
+			print(f'[FAILED] {account_name}: WAF cookies not available for provider "{account.provider}"')
+			return False, None
+		all_cookies = {**waf_cookies, **user_cookies}
+	else:
+		all_cookies = user_cookies
 
 	client = httpx.Client(http2=True, timeout=30.0)
 
@@ -309,6 +299,27 @@ async def main():
 
 	print(f'[INFO] Found {len(accounts)} account configurations')
 
+	# 收集需要 WAF cookies 的 providers
+	providers_needing_waf = set()
+	for account in accounts:
+		provider_config = app_config.get_provider(account.provider)
+		if provider_config and provider_config.needs_waf_cookies():
+			providers_needing_waf.add(account.provider)
+
+	# 预先获取每个 provider 的 WAF cookies（同一 provider 只获取一次）
+	waf_cookies_cache = {}
+	if providers_needing_waf:
+		print(f'[WAF] Need to get WAF cookies for {len(providers_needing_waf)} provider(s): {", ".join(providers_needing_waf)}')
+		for provider_name in providers_needing_waf:
+			provider_config = app_config.get_provider(provider_name)
+			login_url = f'{provider_config.domain}{provider_config.login_path}'
+			waf_cookies = await get_waf_cookies_with_playwright(provider_name, login_url, provider_config.waf_cookie_names)
+			if waf_cookies:
+				waf_cookies_cache[provider_name] = waf_cookies
+				print(f'[WAF] {provider_name}: Cached WAF cookies for all accounts')
+			else:
+				print(f'[WAF] {provider_name}: Failed to get WAF cookies, accounts using this provider will fail')
+
 	last_balance_hash = load_balance_hash()
 
 	success_count = 0
@@ -320,7 +331,7 @@ async def main():
 	for i, account in enumerate(accounts):
 		account_key = f'account_{i + 1}'
 		try:
-			success, user_info = await check_in_account(account, i, app_config)
+			success, user_info = await check_in_account(account, i, app_config, waf_cookies_cache)
 			if success:
 				success_count += 1
 
