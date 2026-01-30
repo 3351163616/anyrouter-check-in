@@ -23,10 +23,28 @@
 
 ### 2. 获取账号信息
 
-对于每个需要签到的账号，你需要获取：(可借助 [在线 Secrets 配置生成器](https://millylee.github.io/anyrouter-check-in/))
+对于每个需要签到的账号，支持两种认证方式：
 
-1. **Cookies**: 用于身份验证
-2. **API User**: 用于请求头的 new-api-user 参数（自己配置其它平台时该值需要注意匹配）
+#### 方式一：access_token + user_id（推荐，永不过期）
+
+1. 打开浏览器，访问 https://anyrouter.top/ 并登录
+2. 打开开发者工具 (F12)，切到 Console 面板
+3. 执行以下代码获取 access_token 和 user_id：
+
+```javascript
+fetch("/api/user/self", {credentials: "include"})
+  .then(r => r.json())
+  .then(d => console.log(JSON.stringify({
+    access_token: d.data.access_token,
+    user_id: String(d.data.id)
+  }, null, 2)));
+```
+
+4. 复制输出的 `access_token` 和 `user_id` 值
+
+#### 方式二：cookies + api_user（旧方式，session 30天过期）
+
+> 注意：此方式仍然支持但不推荐，session cookie 30 天后需要重新获取。（自己配置其它平台时该值需要注意匹配）
 
 #### 获取 Cookies：
 
@@ -53,7 +71,34 @@
 
 ### 4. 多账号配置格式
 
-支持单个与多个账号配置，可选 `name` 和 `provider` 字段：
+支持两种认证格式，可混合使用：
+
+#### 新格式（推荐，永不过期）
+
+```json
+[
+  {
+    "name": "我的主账号",
+    "access_token": "6nDOXwy3kAuttKknnXhZy829xobPeTTc",
+    "user_id": "134757"
+  },
+  {
+    "name": "备用账号",
+    "provider": "agentrouter",
+    "access_token": "anotherTokenValue",
+    "user_id": "134758"
+  }
+]
+```
+
+**新格式字段说明**：
+
+- `access_token` (必需)：用于 Authorization header 认证
+- `user_id` (必需)：用于请求头的 new-api-user 参数
+- `provider` (可选)：指定使用的服务商，默认为 `anyrouter`
+- `name` (可选)：自定义账号显示名称
+
+#### 旧格式（兼容，session 30天过期）
 
 ```json
 [
@@ -75,12 +120,33 @@
 ]
 ```
 
-**字段说明**：
+**旧格式字段说明**：
 
 - `cookies` (必需)：用于身份验证的 cookies 数据
 - `api_user` (必需)：用于请求头的 new-api-user 参数
 - `provider` (可选)：指定使用的服务商，默认为 `anyrouter`
-- `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
+- `name` (可选)：自定义账号显示名称
+
+#### 混合配置
+
+新旧格式可以混合使用，每个账号独立判断认证方式：
+
+```json
+[
+  {
+    "name": "新格式账号",
+    "access_token": "myAccessToken",
+    "user_id": "134757"
+  },
+  {
+    "name": "旧格式账号",
+    "cookies": {
+      "session": "abc123session"
+    },
+    "api_user": "user123"
+  }
+]
+```，用于通知和日志中标识账号
 
 **默认值说明**：
 
@@ -88,7 +154,30 @@
 - 如果未提供 `name` 字段，会使用 `Account 1`、`Account 2` 等默认名称
 - `anyrouter` 与 `agentrouter` 配置已内置，无需填写
 
-接下来获取 cookies 与 api_user 的值。
+接下来获取认证信息。
+
+#### 获取 access_token 和 user_id（推荐）
+
+1. 打开浏览器，访问 https://anyrouter.top/ 并登录
+2. F12 打开开发者工具，切到 Console 面板
+3. 执行以下代码：
+
+```javascript
+fetch("/api/user/self", {credentials: "include"})
+  .then(r => r.json())
+  .then(d => console.log(JSON.stringify({
+    access_token: d.data.access_token,
+    user_id: String(d.data.id)
+  }, null, 2)));
+```
+
+4. 复制输出的 `access_token` 和 `user_id` 值，填入配置即可
+
+> access_token 永不过期，一次获取即可长期使用。
+
+#### 获取 cookies 和 api_user（旧方式）
+
+> 注意：session cookie 30 天过期，建议迁移到 access_token 方式。
 
 通过 F12 工具，切到 Application 面板，拿到 session 的值，最好重新登录下，该值 1 个月有效期，但有可能提前失效，失效后报 401 错误，到时请再重新获取。
 
@@ -130,9 +219,26 @@
 
 ## 配置示例
 
-### 基础配置（向后兼容）
+### 基础配置（推荐新格式）
 
-假设你有两个账号需要签到，不指定 provider 时默认使用 anyrouter：
+假设你有两个账号需要签到：
+
+```json
+[
+  {
+    "access_token": "abc123token",
+    "user_id": "12345"
+  },
+  {
+    "access_token": "xyz789token",
+    "user_id": "67890"
+  }
+]
+```
+
+### 基础配置（旧格式兼容）
+
+不指定 provider 时默认使用 anyrouter：
 
 ```json
 [
@@ -160,18 +266,14 @@
   {
     "name": "AnyRouter 主账号",
     "provider": "anyrouter",
-    "cookies": {
-      "session": "abc123session"
-    },
-    "api_user": "user123"
+    "access_token": "abc123token",
+    "user_id": "12345"
   },
   {
     "name": "AgentRouter 备用",
     "provider": "agentrouter",
-    "cookies": {
-      "session": "xyz789session"
-    },
-    "api_user": "user456"
+    "access_token": "xyz789token",
+    "user_id": "67890"
   }
 ]
 ```

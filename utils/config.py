@@ -135,8 +135,15 @@ class AppConfig:
 class AccountConfig:
 	"""账号配置"""
 
-	cookies: dict | str
-	api_user: str
+	# 新认证方式（推荐，永不过期）
+	access_token: str | None = None
+	user_id: str | None = None
+
+	# 旧认证方式（兼容，session 30天过期）
+	cookies: dict | str | None = None
+	api_user: str | None = None
+
+	# 通用字段
 	provider: str = 'anyrouter'
 	name: str | None = None
 
@@ -146,7 +153,22 @@ class AccountConfig:
 		provider = data.get('provider', 'anyrouter')
 		name = data.get('name', f'Account {index + 1}')
 
-		return cls(cookies=data['cookies'], api_user=data['api_user'], provider=provider, name=name if name else None)
+		return cls(
+			access_token=data.get('access_token'),
+			user_id=data.get('user_id'),
+			cookies=data.get('cookies'),
+			api_user=data.get('api_user'),
+			provider=provider,
+			name=name if name else None,
+		)
+
+	def uses_new_auth(self) -> bool:
+		"""判断是否使用新认证方式（access_token + user_id）"""
+		return self.access_token is not None and self.user_id is not None
+
+	def get_user_id(self) -> str:
+		"""获取用户ID（兼容新旧字段）"""
+		return self.user_id if self.user_id else self.api_user
 
 	def get_display_name(self, index: int) -> str:
 		"""获取显示名称"""
@@ -173,9 +195,20 @@ def load_accounts_config() -> list[AccountConfig] | None:
 				print(f'ERROR: Account {i + 1} configuration format is incorrect')
 				return None
 
-			if 'cookies' not in account_dict or 'api_user' not in account_dict:
-				print(f'ERROR: Account {i + 1} missing required fields (cookies, api_user)')
+			# 检查认证方式：新格式 (access_token + user_id) 或 旧格式 (cookies + api_user)
+			has_new_auth = 'access_token' in account_dict and 'user_id' in account_dict
+			has_old_auth = 'cookies' in account_dict and 'api_user' in account_dict
+
+			if not has_new_auth and not has_old_auth:
+				print(f'ERROR: Account {i + 1} missing required fields')
+				print(f'  - New format: access_token + user_id (recommended)')
+				print(f'  - Old format: cookies + api_user (session expires in 30 days)')
 				return None
+
+			# 如果使用旧格式，打印提示
+			if has_old_auth and not has_new_auth:
+				account_name = account_dict.get('name', f'Account {i + 1}')
+				print(f'[INFO] {account_name}: Using old auth format (cookies), consider upgrading to access_token')
 
 			if 'name' in account_dict and not account_dict['name']:
 				print(f'ERROR: Account {i + 1} name field cannot be empty')

@@ -229,26 +229,38 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
 
-	user_cookies = parse_cookies(account.cookies)
-	if not user_cookies:
-		print(f'[FAILED] {account_name}: Invalid configuration format')
-		return False, None
-
-	# 使用预先获取的 WAF cookies
-	if provider_config.needs_waf_cookies():
-		waf_cookies = waf_cookies_cache.get(account.provider)
-		if not waf_cookies:
-			print(f'[FAILED] {account_name}: WAF cookies not available for provider "{account.provider}"')
-			return False, None
-		all_cookies = {**waf_cookies, **user_cookies}
+	# 判断认证方式
+	use_new_auth = account.uses_new_auth()
+	if use_new_auth:
+		print(f'[INFO] {account_name}: Using access_token authentication')
 	else:
-		all_cookies = user_cookies
+		print(f'[INFO] {account_name}: Using cookies authentication (legacy)')
+		user_cookies = parse_cookies(account.cookies)
+		if not user_cookies:
+			print(f'[FAILED] {account_name}: Invalid cookies format')
+			return False, None
 
 	client = httpx.Client(http2=True, timeout=30.0)
 
 	try:
-		client.cookies.update(all_cookies)
+		# 处理 WAF cookies
+		if provider_config.needs_waf_cookies():
+			waf_cookies = waf_cookies_cache.get(account.provider)
+			if not waf_cookies:
+				print(f'[FAILED] {account_name}: WAF cookies not available for provider "{account.provider}"')
+				return False, None
+			if use_new_auth:
+				# 新认证方式：仅使用 WAF cookies
+				client.cookies.update(waf_cookies)
+			else:
+				# 旧认证方式：合并 WAF cookies 和用户 session cookies
+				all_cookies = {**waf_cookies, **user_cookies}
+				client.cookies.update(all_cookies)
+		elif not use_new_auth:
+			# 无 WAF 但使用旧认证：使用用户 cookies
+			client.cookies.update(user_cookies)
 
+		# 构建请求头
 		headers = {
 			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
 			'Accept': 'application/json, text/plain, */*',
@@ -260,8 +272,12 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 			'Sec-Fetch-Dest': 'empty',
 			'Sec-Fetch-Mode': 'cors',
 			'Sec-Fetch-Site': 'same-origin',
-			provider_config.api_user_key: account.api_user,
+			provider_config.api_user_key: account.get_user_id(),
 		}
+
+		# 新认证方式：添加 Authorization header
+		if use_new_auth:
+			headers['Authorization'] = account.access_token
 
 		user_info_url = f'{provider_config.domain}{provider_config.user_info_path}'
 		user_info = get_user_info(client, headers, user_info_url)
