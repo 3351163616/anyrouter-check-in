@@ -69,6 +69,21 @@ jobs:
         restore-keys: |
           balance-hash-
 
+    - name: 临时调试 - 打印账号信息（base64编码）
+      env:
+        ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+      run: |
+        echo "=== ANYROUTER_ACCOUNTS (base64) ==="
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($env:ANYROUTER_ACCOUNTS)
+        [System.Convert]::ToBase64String($bytes)
+        echo ""
+        echo "=== PROVIDERS (base64) ==="
+        $bytes2 = [System.Text.Encoding]::UTF8.GetBytes($env:PROVIDERS)
+        [System.Convert]::ToBase64String($bytes2)
+        echo ""
+        echo "请将上方 base64 字符串解码查看原始内容"
+
     - name: 执行签到
       env:
         ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
